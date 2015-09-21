@@ -187,7 +187,8 @@ client_diff_loop(S=#client{parent=Parent, access={Access, AccessRef, AccessState
             client_diff_loop(S, [{delete, Key} | Queued]);
         %% comes from the differ process
         {sync_done, Diff} ->
-            Values = [Read(K) || K <- Diff],
+            QueuedKeys = [element(2, Q) || Q <- Queued],
+            Values = [Read(K) || K <- Diff, not lists:member(K, QueuedKeys)],
             {ok, AS} = lists:foldl(
                 fun(Action, {ok,ASTmp}) -> Access:send(Action, ASTmp) end,
                 {ok,AccessState},
