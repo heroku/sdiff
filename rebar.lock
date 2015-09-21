@@ -1,0 +1,4 @@
+[{<<"merklet">>,
+  {git,"https://github.com/ferd/merklet.git",
+       {ref,"6818d76779a2b11fc3fc92f53d3a4aaa833c13ee"}},
+  0}].
