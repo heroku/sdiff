@@ -62,10 +62,10 @@ handle_call(diff, _From, State=#state{diff={Pid, Ref, undefined}, canonical=Tree
     Pid ! {diff, self(), Tree},
     {reply, async_diff, State#state{diff={Pid, Ref, diff}}};
 handle_call({write, _Key, _Val}=Msg, _From, State) ->
-    NewState = update(Msg, State),
+    NewState = update_tree(Msg, State),
     {reply, ok, NewState};
 handle_call({delete, _Key}=Msg, _From, State) ->
-    NewState = update(Msg, State),
+    NewState = update_tree(Msg, State),
     {reply, ok, NewState};
 handle_call(Call, _From, State=#state{}) ->
     error_logger:warning_report(unexpected_msg, {?MODULE, call, Call}),
@@ -112,6 +112,13 @@ terminate({shutdown, retire}, _State) ->
 %%%%%%%%%%%%%%%
 %%% PRIVATE %%%
 %%%%%%%%%%%%%%%
+update_tree({write, Key, Val}, S=#state{canonical=Tree}) ->
+    NewTree = merklet:insert({Key, term_to_binary(Val)}, Tree),
+    S#state{canonical=NewTree};
+update_tree({delete, Key}, S=#state{canonical=Tree}) ->
+    NewTree = merklet:delete(Key, Tree),
+    S#state{canonical=NewTree}.
+
 update({write, Key, Val}, S=#state{canonical=Tree, storefun=StoreFun}) ->
     NewTree = merklet:insert({Key, term_to_binary(Val)}, Tree),
     StoreFun({write, Key, Val}),
