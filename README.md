@@ -180,7 +180,7 @@ Build
 Tests
 -----
 
-TODO, also very important to do.
+    $ rebar3 do ct, proper, dialyzer
 
 Demo
 -----

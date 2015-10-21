@@ -48,9 +48,9 @@ end_per_testcase(_, Config) ->
 %% data with its own callbacks.
 no_self_rewrite(Config) ->
     %% this call is assumed to be from the local end to set up initial state. The
-    %% callback above shouldn't get called. The call is also synchronous, which gives
-    %% us a decent chance (as long as callbacks are synchronous) that as soon as
-    %% we return, we know if side effects have happened.
+    %% callback above shouldn't get called. The call is also synchronous, which
+    %% gives us a decent chance (as long as callbacks are synchronous) that as
+    %% soon as we return, we know if side effects have happened.
     Self = self(),
     Callback = fun(_) -> kill(Self, failed) end,
     {ok, Client} = sdiff_client:start_link(
