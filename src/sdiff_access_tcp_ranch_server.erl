@@ -5,7 +5,7 @@
 %% are forwarded as messages, but any process can 'send' so
 %% that one is direct.
 -module(sdiff_access_tcp_ranch_server).
--behaviour(ranch_protocol).
+%-behaviour(ranch_protocol).
 -export([init/3, send/2, recv/2]).
 -export([start_link/4, init/4]).
 -record(state, {owner :: pid(),

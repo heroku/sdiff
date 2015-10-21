@@ -1,7 +1,7 @@
 -module(sdiff_client).
 -behaviour(gen_server).
 -export([write/3, delete/2,
-         ready/1, diff/1]).
+         ready/1, diff/1, status/1]).
 -export([start_link/3, start_link/4]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -35,6 +35,11 @@ delete(Name, Key) ->
 ready(Name) ->
     gen_server:cast(Name, ready).
 
+%% Debug function to introspect running state. Intended for tests and
+%% operators.
+status(Name) ->
+    gen_server:call(Name, status).
+
 %% Trigger a diff
 diff(Name) ->
     gen_server:call(Name, diff).
@@ -62,18 +67,29 @@ handle_call(diff, _From, State=#state{diff={Pid, Ref, undefined}, canonical=Tree
     Pid ! {diff, self(), Tree},
     {reply, async_diff, State#state{diff={Pid, Ref, diff}}};
 handle_call({write, _Key, _Val}=Msg, _From, State) ->
-    NewState = update(Msg, State),
+    NewState = update_tree(Msg, State),
     {reply, ok, NewState};
 handle_call({delete, _Key}=Msg, _From, State) ->
-    NewState = update(Msg, State),
+    NewState = update_tree(Msg, State),
     {reply, ok, NewState};
+handle_call(status, _From, State) ->
+    Status = case State of
+        #state{diff={undefined, undefined, undefined}} -> disconnected;
+        #state{diff={_,_,diff}} -> diff;
+        #state{diff={Pid, _, undefined}} ->
+            case process_info(Pid, dictionary) of
+                undefined -> disconnected;
+                {dictionary, Dict} -> lists:member({connected,true}, Dict)
+            end
+    end,
+    {reply, Status, State};
 handle_call(Call, _From, State=#state{}) ->
     error_logger:warning_report(unexpected_msg, {?MODULE, call, Call}),
     {noreply, State}.
 
-handle_cast(ready, State=#state{}) ->
-    self() ! reconnect,
-    {noreply, State};
+handle_cast(ready, State=#state{init_access={Access, AccessArgs}, diff={undefined, undefined, undefined}}) ->
+    {Pid, Ref} = reconnect(Access, AccessArgs),
+    {noreply, State#state{diff={Pid, Ref, undefined}}};
 handle_cast(Cast, State=#state{}) ->
     error_logger:warning_report(unexpected_msg, {?MODULE, cast, Cast}),
     {noreply, State}.
@@ -88,8 +104,7 @@ handle_info({'DOWN', Ref, process, Pid, Error}, State=#state{diff={Pid,Ref,_}}) 
     self() ! reconnect,
     {noreply, State#state{diff={undefined, undefined, undefined}}};
 handle_info(reconnect, State=#state{init_access={Access, AccessArgs}, diff={undefined, undefined, undefined}}) ->
-    Self = self(),
-    {Pid, Ref} = spawn_monitor(fun() -> server(Self, Access, AccessArgs) end),
+    {Pid, Ref} = reconnect(Access, AccessArgs),
     {noreply, State#state{diff={Pid, Ref, undefined}}};
 handle_info({write, _Key, _Val}=Msg, State) ->
     NewState = update(Msg, State),
@@ -112,6 +127,18 @@ terminate({shutdown, retire}, _State) ->
 %%%%%%%%%%%%%%%
 %%% PRIVATE %%%
 %%%%%%%%%%%%%%%
+
+reconnect(Access, AccessArgs) ->
+    Self = self(),
+    spawn_monitor(fun() -> server(Self, Access, AccessArgs) end).
+
+update_tree({write, Key, Val}, S=#state{canonical=Tree}) ->
+    NewTree = merklet:insert({Key, term_to_binary(Val)}, Tree),
+    S#state{canonical=NewTree};
+update_tree({delete, Key}, S=#state{canonical=Tree}) ->
+    NewTree = merklet:delete(Key, Tree),
+    S#state{canonical=NewTree}.
+
 update({write, Key, Val}, S=#state{canonical=Tree, storefun=StoreFun}) ->
     NewTree = merklet:insert({Key, term_to_binary(Val)}, Tree),
     StoreFun({write, Key, Val}),
@@ -123,6 +150,7 @@ update({delete, Key}, S=#state{canonical=Tree, storefun=StoreFun}) ->
 
 server(Self, Access, AccessArgs) ->
     AccessState = Access:init(self(), AccessArgs),
+    put(connected, true),
     server_loop(#server{parent=Self, access={Access, AccessState}}).
 
 server_loop(S=#server{parent=Pid, access={Access, AccessState}}) ->

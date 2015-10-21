@@ -1,7 +1,8 @@
 -module(sdiff_serv).
 -behaviour(gen_server).
 -export([write/3, delete/2,
-         await/1, ready/1, connect/3]).
+         await/1, ready/1, connect/3,
+         client_count/1]).
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -41,26 +42,9 @@ ready(Name) ->
 connect(Name, Access, AccessArgs) ->
     gen_server:call(Name, {connect, Access, AccessArgs}).
 
-%diff(Name, RemoteRef) ->
-%    %% Protocol messages: {at, Path}, {keys, Path}, {child_at, Path}
-%    %%
-%    %% There must be one sender and one receiver.
-%    %% The local call made from the node whose tree is being diffed
-%    %% should make use of an accessor function that will send these
-%    %% messages and ask the remote node for its data.
-%    %% The remote one will receive the messages and need to forward them
-%    %% through its own accessor function.
-%    %%
-%    %% TreeLocal                                TreeRemote
-%    %%    |                                        |
-%    %%  diff(Local, RPCAccessor)                   |
-%    %%              ^                              |
-%    %%              '------------------------< LocalAccessor
-%    %%
-%    %% A local diff is thus expected to be more costly (and sequential)
-%    %% than the remote one given tree traversal shouldn't be too slow in
-%    %% order to return a minimal amount of data.
-%    gen_server:call(Name, {diff, RemoteRef}).
+%% Debug function to get an idea of how many clients are connected
+client_count(Name) ->
+    gen_server:call(Name, client_count).
 
 %%%%%%%%%%%%%%%%%%
 %%% GEN_SERVER %%%
@@ -93,6 +77,8 @@ handle_call(tree, _From, State=#state{canonical=Tree}) ->
     %% Actual diffing. For this one we must make a local copy for he current
     %% operation, then make one of the remote tree.
     {reply, Tree, State};
+handle_call(client_count, _From, State=#state{clients=Clients}) ->
+    {reply, maps:size(Clients), State};
 %% Catch-all
 handle_call(Call, _From, State=#state{}) ->
     error_logger:warning_report(unexpected_msg, {?MODULE, call, Call}),
@@ -192,7 +178,7 @@ client_diff_loop(S=#client{parent=Parent, access={Access, AccessRef, AccessState
             {ok, AS} = lists:foldl(
                 fun(Action, {ok,ASTmp}) -> Access:send(Action, ASTmp) end,
                 {ok,AccessState},
-                [sync_done | Values] ++ lists:reverse(Queued)
+                [sync_done]++lists:reverse(Queued)++Values
             ),
             client_loop(S#client{access={Access, AccessRef, AS}});
         %% sent from the differ, forward, and send back the response.
