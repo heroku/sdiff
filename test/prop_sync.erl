@@ -39,7 +39,7 @@ prop_sync() ->
                 ?BOTH:stop(),
                 ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
                                     [History,State,Result]),
-                          Result =:= ok)
+                          aggregate(command_names(Cmds), Result =:= ok))
             end)).
 
 initial_state() ->
