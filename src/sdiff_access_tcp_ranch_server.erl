@@ -17,7 +17,7 @@
                  pending = <<>> :: binary()}).
 
 init(ReportTo, MsgRef, {Owner,Sock}) ->
-    link(Owner),
+    try link(Owner) catch error:noproc -> exit({shutdown, owner_missing}) end,
     ReportTo =/= self() andalso link(ReportTo), % don't link if local
     Owner ! {report_to, ReportTo, MsgRef},
     #state{owner=Owner, to=ReportTo, csocket=Sock}.

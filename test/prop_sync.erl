@@ -30,13 +30,24 @@ val() ->
 key() ->
     binary().
 
-prop_sync() ->
+prop_sync_cmd() ->
     ?FORALL(Cmds, commands(?MODULE),
             ?TRAPEXIT(
              begin
-                ?BOTH:start_link(),
+                ?BOTH:start_link(disterl),
                 {History, State, Result} = run_commands(?MODULE, Cmds),
-                ?BOTH:stop(),
+                ?BOTH:stop(disterl),
+                ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
+                                    [History,State,Result]),
+                          aggregate(command_names(Cmds), Result =:= ok))
+            end)).
+prop_sync_tcp() ->
+    ?FORALL(Cmds, commands(?MODULE),
+            ?TRAPEXIT(
+             begin
+                ?BOTH:start_link(tcp),
+                {History, State, Result} = run_commands(?MODULE, Cmds),
+                ?BOTH:stop(tcp),
                 ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
                                     [History,State,Result]),
                           aggregate(command_names(Cmds), Result =:= ok))

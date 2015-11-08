@@ -11,7 +11,7 @@
                  report_to :: {pid(), reference()}}).
 
 init(ReportTo, MsgRef, {Owner,Remote}) ->
-    link(Owner),
+    try link(Owner) catch error:noproc -> exit({shutdown, owner_missing}) end,
     ReportTo =/= self() andalso link(ReportTo),
     Owner ! {report_to, ReportTo, MsgRef},
     #state{owner=Owner, to=ReportTo, remote=Remote}.

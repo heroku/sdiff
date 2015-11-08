@@ -52,6 +52,7 @@ client_count(Name) ->
 init([ReadFun]) ->
     Tree = undefined,
     %% TODO: trap exits of clients
+    process_flag(trap_exit, true),
     {ok, #state{canonical=Tree, readfun=ReadFun}}.
 
 %% Awaiting management
@@ -102,7 +103,15 @@ handle_info({'DOWN', Ref, process, Pid, Error}, State=#state{clients=Clients}) -
         #{Ref := Pid} ->
             {noreply, State#state{clients=maps:remove(Ref, Clients)}};
         #{} ->
-            error_logger:warning_report(unexpected_monitor, {?MODULE, Pid, Error}),
+            error_logger:error_report(unexpected_monitor, {?MODULE, Pid, Error}),
+            {noreply, State}
+    end;
+handle_info({'EXIT', Pid, Error}, State=#state{clients=Clients}) ->
+    case lists:member(Pid, maps:values(Clients)) of
+        true ->
+            {noreply, State}; % monitor will handle it
+        false ->
+            error_logger:error_report(unexpected_exit, {?MODULE, Pid, Error}),
             {noreply, State}
     end;
 handle_info(Info, State=#state{}) ->
@@ -112,8 +121,8 @@ handle_info(Info, State=#state{}) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate({shutdown, retire}, _State) ->
-    {shutdown, retire}.
+terminate(_, #state{clients=Clients}) ->
+    maps:fold(fun(_Ref, Pid, _Acc) -> exit(Pid, shutdown) end, 0, Clients).
 
 %%%%%%%%%%%%%%%
 %%% PRIVATE %%%

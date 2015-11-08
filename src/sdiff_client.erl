@@ -149,9 +149,13 @@ update({delete, Key}, S=#state{canonical=Tree, storefun=StoreFun}) ->
     S#state{canonical=NewTree}.
 
 server(Self, Access, AccessArgs) ->
-    AccessState = Access:init(self(), AccessArgs),
-    put(connected, true),
-    server_loop(#server{parent=Self, access={Access, AccessState}}).
+    case Access:init(self(), AccessArgs) of
+        {ok, AccessState} ->
+            put(connected, true),
+            server_loop(#server{parent=Self, access={Access, AccessState}});
+        Other ->
+            exit(Other)
+    end.
 
 server_loop(S=#server{parent=Pid, access={Access, AccessState}}) ->
     {ok, Msg, AS1} = receive_or_recv(Pid, Access, AccessState),
@@ -196,6 +200,7 @@ receive_or_recv(Parent, Access, AccessState) ->
     after 0 ->
         case Access:recv(AccessState, 500) of
             {error, timeout} -> receive_or_recv(Parent, Access, AccessState);
+            {error, Reason} -> exit(Reason);
             Val -> Val
         end
     end.

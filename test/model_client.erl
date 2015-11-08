@@ -2,12 +2,13 @@
 -export([start/0, write/2, ready/0, delete/1, diff/0, wait_connected/0]).
 
 start() ->
+    {ok, {Mod, Config}} = application:get_env(sdiff, config),
     sdiff_client:start_link({local,client},
                             fun({write, K, V}) -> ets:insert(client, {K,V})
                             ;  ({delete, K}) -> ets:delete(client, K)
                             end,
-                            sdiff_access_msg_client,
-                            whereis(server_middleman)).
+                            Mod,
+                            Config).
 
 write(K,V) ->
     ets:insert(client, {K, V}), % manual insert

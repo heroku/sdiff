@@ -4,12 +4,17 @@
 
 init(Parent, Pid) ->
     Parent = self(), % same proc
-    link(Pid),
-    Pid ! {'$sdiff', self(), setup},
-    receive
-        {'$sdiff', Pid, setup_ack} -> ok
-    end,
-    #state{remote=Pid}.
+    try link(Pid) of
+        true ->
+            Pid ! {'$sdiff', self(), setup},
+            receive
+                {'$sdiff', Pid, setup_ack} -> ok
+            end,
+            {ok, #state{remote=Pid}}
+    catch
+        error:noproc ->
+            {error, {noproc, Pid}}
+    end.
 
 recv(S=#state{remote=Pid}, Timeout) ->
     receive

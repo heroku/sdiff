@@ -6,8 +6,13 @@
 %% init in the owning process
 init(Parent, {Address, Port, Options, Timeout}) ->
     Parent = self(), % same proc
-    {ok, P} = gen_tcp:connect(Address, Port, [{active,false},binary,{nodelay,true}|Options], Timeout),
-    #state{port=P}.
+    Opts = [{active,false}, binary, {nodelay,true} | Options],
+    case gen_tcp:connect(Address, Port, Opts, Timeout) of
+        {ok, P} ->
+            {ok, #state{port=P}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 recv(S=#state{port=Sock, pending=Pending}, TimeOut) ->
     case sock_recv(Sock, Pending, 0, TimeOut) of

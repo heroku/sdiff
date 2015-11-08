@@ -1,9 +1,8 @@
 -module(model_join).
 -define(MAGIC_KEY, <<"$$ THIS IS SPECIAL $$">>).
--export([start_link/0, stop/0, join/0]).
+-export([start_link/1, stop/1, join/0]).
 
-start_link() ->
-    application:ensure_all_started(ranch),
+start_link(disterl) ->
     application:ensure_all_started(sdiff),
     ets:new(client, [named_table, public, set]),
     ets:new(server, [named_table, public, set]),
@@ -15,16 +14,47 @@ start_link() ->
                             end
                           end),
     {ok, Middleman} = sdiff_access_msg_server:start_link(SdiffServ),
-    register(server_middleman, Middleman).
+    register(server_middleman, Middleman),
+    application:set_env(sdiff, config, {sdiff_access_msg_client, Middleman});
+start_link(tcp) ->
+    application:ensure_all_started(ranch),
+    application:ensure_all_started(sdiff),
+    ets:new(client, [named_table, public, set]),
+    ets:new(server, [named_table, public, set]),
+    {ok, _} = sdiff_serv:start_link({local,server},
+                  fun(K) ->
+                    case ets:lookup(server, K) of
+                        [] -> {delete, K};
+                        [{_,V}] -> {write, K, V}
+                    end
+                  end),
+    Port = 8765,
+    {ok,_} = ranch:start_listener(
+        server, 5,
+        ranch_tcp,
+        [{port, Port},
+         {nodelay,true},
+         {max_connections, 1000}],
+        sdiff_access_tcp_ranch_server,
+        [server]),
+    application:set_env(sdiff, config, {sdiff_access_tcp_client,
+                                        {{127,0,0,1}, Port, [], 10000}}).
 
-stop() ->
+stop(disterl) ->
     Middleman = whereis(server_middleman),
     Server = whereis(server),
     Client = whereis(client),
     [begin
-        unlink(Pid), exit(Pid, shutdown)
-     end || Pid <- [Middleman, Server, Client],
-            Pid =/= undefined].
+        unlink(Pid), exit(Pid, shutdown), wait_dead(Pid)
+     end || Pid <- [Client, Middleman, Server],
+            Pid =/= undefined];
+stop(tcp) ->
+    [begin unlink(Pid), exit(Pid, shutdown), wait_dead(Pid) end
+     || Pid <- [whereis(client)], Pid =/= undefined],
+    ranch:stop_listener(server),
+    [begin unlink(Pid), exit(Pid, shutdown), wait_dead(Pid) end
+     || Pid <- [whereis(server)], Pid =/= undefined].
+
 
 join() ->
     %% Synchronize here. We do it by inserting a magic key with a unique
@@ -56,3 +86,9 @@ write_wait_for_value(Key, Val, N) ->
 
 tab_to_map(Tid) ->
     maps:remove(?MAGIC_KEY, maps:from_list(ets:tab2list(Tid))).
+
+wait_dead(Pid) ->
+    case is_process_alive(Pid) of
+        true -> timer:sleep(1), wait_dead(Pid);
+        false -> ok
+    end.
