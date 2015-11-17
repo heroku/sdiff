@@ -63,7 +63,7 @@ init(Name) ->
 loop(Remote, State=#rstate{report_to={RPid, RRef}}) ->
     receive
         {'$sdiff', Remote, sync_req} ->
-            RPid ! {diff, RRef},
+            sdiff_serv_middleman:diff_req(RPid, RRef),
             loop(Remote, State);
         {'$sdiff', Remote, Msg} ->
             receive

@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 -export([write/3, delete/2,
          await/1, ready/1, connect/3,
-         client_count/1]).
+         tree/1, client_count/1]).
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -13,10 +13,6 @@
                 clients = #{},
                 readfun :: fun((Key::_) -> {write, Key, Val::_} | {delete, Key})
                }).
--record(client, {parent :: pid(),
-                 access :: {module(), reference(), term()},
-                 readfun :: fun((Key::_) -> Val::_)}).
-
 
 %%%%%%%%%%%%%%
 %%% PUBLIC %%%
@@ -42,6 +38,10 @@ ready(Name) ->
 connect(Name, Access, AccessArgs) ->
     gen_server:call(Name, {connect, Access, AccessArgs}).
 
+%% Internal call to get state
+tree(Name) ->
+    gen_server:call(Name, tree).
+
 %% Debug function to get an idea of how many clients are connected
 client_count(Name) ->
     gen_server:call(Name, client_count).
@@ -62,16 +62,26 @@ handle_call(await, _From, State) ->
     {reply, ok, State};
 %% Key/Val management for updates
 handle_call({write, Key, Val}, _From, State=#state{canonical=Tree, clients=Clients}) ->
-    maps:fold(fun(_Ref, Pid, _) -> Pid ! {write, self(), Key, Val} end, ignore, Clients),
+    maps:fold(
+        fun(_Ref, Pid, _) -> sdiff_serv_middleman:write(Pid, Key, Val) end,
+        ignore,
+        Clients
+    ),
     {reply, ok, State#state{canonical=merklet:insert({Key, term_to_binary(Val)}, Tree)}};
 handle_call({delete, Key}, _From, State=#state{canonical=Tree, clients=Clients}) ->
-    maps:fold(fun(_Ref, Pid, _) -> Pid ! {delete, self(), Key} end, ignore, Clients),
+    maps:fold(
+        fun(_Ref, Pid, _) -> sdiff_serv_middleman:delete(Pid, Key) end,
+        ignore,
+        Clients
+    ),
     {reply, ok, State#state{canonical=merklet:delete(Key, Tree)}};
 %% Client subscription
 handle_call({connect, Access, AccessArgs}, _From,
             State=#state{clients=Clients, readfun=ReadFun}) ->
     Self = self(),
-    {Pid, Ref} = spawn_monitor(fun() -> client(Self, ReadFun, Access, AccessArgs) end),
+    %% TODO: unlink? move to a supervisor?
+    {ok, Pid} = sdiff_serv_middleman:start(Self, ReadFun, Access, AccessArgs),
+    Ref = erlang:monitor(process, Pid),
     {reply, Ref, State#state{clients=Clients#{Ref => Pid}}};
 %% Diff management
 handle_call(tree, _From, State=#state{canonical=Tree}) ->
@@ -128,72 +138,3 @@ terminate(_, #state{clients=Clients}) ->
 %%% PRIVATE %%%
 %%%%%%%%%%%%%%%
 
-client(Parent, ReadFun, Access, AccessArgs) ->
-    %% Any problem having this local?
-    AccessRef = make_ref(),
-    AccessState = Access:init(self(), AccessRef, AccessArgs),
-    client_loop(#client{parent = Parent,
-                        access = {Access, AccessRef, AccessState},
-                        readfun = ReadFun}).
-
-%% Info only, being forwarded to the client.
-client_loop(S=#client{parent=Parent, access={Access, AccessRef, AccessState}}) ->
-    receive
-        %% Comes from our local server gen_server
-        {write, Parent, Key, Val} ->
-            {ok, AS} = Access:send({write, Key, Val}, AccessState),
-            client_loop(S#client{access={Access, AccessRef, AS}});
-        {delete, Parent, Key} ->
-            {ok, AS} = Access:send({delete, Key}, AccessState),
-            client_loop(S#client{access={Access, AccessRef, AS}});
-        %% this should essentially come from the remote end's access function
-        %% telling us to initiate the diff.
-        {diff, AccessRef} ->
-            client_diff(S)
-    end.
-
-client_diff(S=#client{parent=Parent, access={Access, AccessRef, AccessState}}) ->
-    %% Remote = InitRemote(),
-    %% run the diff somewhere? make the queuing of commands implicit?
-    {ok, AS} = Access:send(sync_start, AccessState),
-    From = self(),
-    spawn_link(fun() ->
-        LocalisedRemote = merklet:access_unserialize(
-            fun(Command, Path) ->
-                R = make_ref(),
-                From ! {sync_request, self(), R, Command, Path},
-                receive
-                    {R, {sync_response, Bin}} ->
-                        Bin
-                end
-        end),
-        Tree = gen_server:call(Parent, tree),
-        Diff = merklet:dist_diff(Tree, LocalisedRemote),
-        From ! {sync_done, Diff}
-    end),
-    client_diff_loop(S#client{access={Access, AccessRef, AS}}, []).
-
-client_diff_loop(S=#client{parent=Parent, access={Access, AccessRef, AccessState},
-                           readfun=Read}, Queued) ->
-    receive
-        {write, Parent, Key, Val} ->
-            client_diff_loop(S, [{write, Key, Val} | Queued]);
-        {delete, Parent, Key} ->
-            client_diff_loop(S, [{delete, Key} | Queued]);
-        %% comes from the differ process
-        {sync_done, Diff} ->
-            QueuedKeys = [element(2, Q) || Q <- Queued],
-            Values = [Read(K) || K <- Diff, not lists:member(K, QueuedKeys)],
-            {ok, AS} = lists:foldl(
-                fun(Action, {ok,ASTmp}) -> Access:send(Action, ASTmp) end,
-                {ok,AccessState},
-                [sync_done]++lists:reverse(Queued)++Values
-            ),
-            client_loop(S#client{access={Access, AccessRef, AS}});
-        %% sent from the differ, forward, and send back the response.
-        {sync_request, From, Ref, Cmd, Path} ->
-            {ok, AS1} = Access:send({sync_request, Cmd, Path}, AccessState),
-            {ok, {sync_response, Bin}, AS2} = Access:recv(AS1, timer:seconds(60)),
-            From ! {Ref, {sync_response, Bin}},
-            client_diff_loop(S#client{access={Access, AccessRef, AS2}}, Queued)
-    end.

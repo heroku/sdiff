@@ -65,7 +65,7 @@ loop(Socket, Transport, State=#rstate{pending=Pending, report_to={RPid, RRef}}) 
         {error, timeout} ->
             loop(Socket, Transport, State);
         {ok, sync_req, NewPending} ->
-            RPid ! {diff, RRef},
+            sdiff_serv_middleman:diff_req(RPid, RRef),
             loop(Socket, Transport, State#rstate{pending=NewPending});
         {ok, Decoded, NewPending} ->
             receive
