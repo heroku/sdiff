@@ -11,10 +11,6 @@
                 diff = {undefined,undefined,undefined} :: {pid() | undefined, reference() | undefined, diff | undefined},
                 storefun :: fun(({write, _, _} | {delete, _}) -> _)
                }).
-
--record(server, {parent :: pid(),
-                 tree :: undefined,
-                 access :: {module(), term()}}).
 %%%%%%%%%%%%%%
 %%% PUBLIC %%%
 %%%%%%%%%%%%%%
@@ -121,8 +117,8 @@ handle_info(Info, State=#state{}) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate({shutdown, retire}, _State) ->
-    {shutdown, retire}.
+terminate(_, _State) ->
+    ok.
 
 %%%%%%%%%%%%%%%
 %%% PRIVATE %%%
@@ -130,7 +126,8 @@ terminate({shutdown, retire}, _State) ->
 
 reconnect(Access, AccessArgs) ->
     Self = self(),
-    spawn_monitor(fun() -> server(Self, Access, AccessArgs) end).
+    {ok, Pid} = sdiff_client_middleman:start(Self, Access, AccessArgs),
+    {Pid, erlang:monitor(process, Pid)}.
 
 update_tree({write, Key, Val}, S=#state{canonical=Tree}) ->
     NewTree = merklet:insert({Key, term_to_binary(Val)}, Tree),
@@ -148,59 +145,3 @@ update({delete, Key}, S=#state{canonical=Tree, storefun=StoreFun}) ->
     StoreFun({delete, Key}),
     S#state{canonical=NewTree}.
 
-server(Self, Access, AccessArgs) ->
-    case Access:init(self(), AccessArgs) of
-        {ok, AccessState} ->
-            put(connected, true),
-            server_loop(#server{parent=Self, access={Access, AccessState}});
-        Other ->
-            exit(Other)
-    end.
-
-server_loop(S=#server{parent=Pid, access={Access, AccessState}}) ->
-    {ok, Msg, AS1} = receive_or_recv(Pid, Access, AccessState),
-    case Msg of
-        {write, Key, Val} ->
-            Pid ! {write, Key, Val},
-            server_loop(S#server{access={Access, AS1}});
-        {delete, Key} ->
-            Pid ! {delete, Key},
-            server_loop(S#server{access={Access, AS1}});
-        {diff, Pid, Tree} ->
-            %% we loop on ourselves until sync_start is ready,
-            %% indicating the server is in place for the diff
-            %% protocol to take over
-            {ok, AS2} = Access:send(sync_req, AS1),
-            server_loop(S#server{access={Access, AS2}, tree=Tree});
-        sync_start ->
-            %% clear the tree from the state, make it explicit
-            %% so we don't track it in memory more than is needed.
-            server_diff(S#server{access={Access, AS1}, tree=undefined}, S#server.tree)
-    end.
-
-server_diff(State, Tree) ->
-    SerializedTree = merklet:access_serialize(Tree),
-    server_diff_loop(State, SerializedTree).
-
-server_diff_loop(S=#server{parent=Pid, access={Access, AccessState}}, STree) ->
-    {ok, Msg, AS1} = receive_or_recv(Pid, Access, AccessState),
-    case Msg of
-        {sync_request, Cmd, Path} ->
-            Bin = STree(Cmd, Path),
-            {ok, AS2} = Access:send({sync_response, Bin}, AS1),
-            server_diff_loop(S#server{access={Access, AS2}}, STree);
-        sync_done ->
-            Pid ! {diff_done, self()},
-            server_loop(S#server{access={Access, AS1}})
-    end.
-
-receive_or_recv(Parent, Access, AccessState) ->
-    receive
-        {diff, Parent, Tree} -> {ok, {diff, Parent, Tree}, AccessState}
-    after 0 ->
-        case Access:recv(AccessState, 500) of
-            {error, timeout} -> receive_or_recv(Parent, Access, AccessState);
-            {error, Reason} -> exit(Reason);
-            Val -> Val
-        end
-    end.
