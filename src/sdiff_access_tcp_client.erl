@@ -9,6 +9,7 @@ init(Parent, {Address, Port, Options, Timeout}) ->
     Opts = [{active,false}, binary, {nodelay,true} | Options],
     case gen_tcp:connect(Address, Port, Opts, Timeout) of
         {ok, P} ->
+            lager:debug("cconnected ~p", [P]),
             {ok, #state{port=P}};
         {error, Reason} ->
             {error, Reason}
@@ -17,6 +18,7 @@ init(Parent, {Address, Port, Options, Timeout}) ->
 recv(S=#state{port=Sock, pending=Pending}, TimeOut) ->
     case sock_recv(Sock, Pending, 0, TimeOut) of
         {ok, Decoded, NewPending} ->
+            lager:debug("crecv ~p", [Decoded]),
             {ok, Decoded, S#state{pending=NewPending}};
         {error, Reason} ->
             {error, Reason}
@@ -25,6 +27,7 @@ recv(S=#state{port=Sock, pending=Pending}, TimeOut) ->
 
 send(Msg, S=#state{port=Sock}) ->
     ok = gen_tcp:send(Sock, serialize_msg(Msg)),
+    lager:debug("csend ~p to ~p", [Msg, Sock]),
      {ok, S}.
 
 terminate(_Reason, #state{port=Sock}) ->

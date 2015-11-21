@@ -1,3 +1,9 @@
+%%% @doc test handler that ignores protocols and just sends messages across
+%%% processes.
+%%%
+%%% This access module still uses middlemen processes to avoid interacting with
+%%% the regular messages that are used between components, especially when
+%%% dealing with the middleman FSM.
 -module(sdiff_access_msg_client).
 -export([init/2, send/2, recv/2, terminate/2]).
 %-define(DBG(Prefix, Val), io:format(user, Prefix++" ~p~n", [Val])).

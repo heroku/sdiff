@@ -31,8 +31,8 @@ key() ->
     binary().
 
 prop_sync_cmd() ->
+    log_utils:level(warning),
     ?FORALL(Cmds, commands(?MODULE),
-            ?TRAPEXIT(
              begin
                 ?BOTH:start_link(disterl),
                 {History, State, Result} = run_commands(?MODULE, Cmds),
@@ -40,10 +40,10 @@ prop_sync_cmd() ->
                 ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
                                     [History,State,Result]),
                           aggregate(command_names(Cmds), Result =:= ok))
-            end)).
+            end).
 prop_sync_tcp() ->
+    log_utils:level(warning),
     ?FORALL(Cmds, commands(?MODULE),
-            ?TRAPEXIT(
              begin
                 ?BOTH:start_link(tcp),
                 {History, State, Result} = run_commands(?MODULE, Cmds),
@@ -51,11 +51,12 @@ prop_sync_tcp() ->
                 ?WHENFAIL(io:format("History: ~p\nState: ~p\nResult: ~p\n",
                                     [History,State,Result]),
                           aggregate(command_names(Cmds), Result =:= ok))
-            end)).
+            end).
 
 initial_state() ->
     %% server is a named process we've got to run
     %io:format(user,"init~n",[]),
+    lager:debug("prop_init", []),
     #state{server={init, #{}}}.
 
 command(#state{clients = []}) ->

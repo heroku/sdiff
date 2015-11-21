@@ -14,9 +14,13 @@ start_link(TreeServer, ReportTo) ->
 %%% GEN_SERVER CALLBACKS %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init({TreeServer, ReportTo}) ->
-    link(ReportTo),
-    self() ! diff,
-    {ok, {TreeServer, ReportTo}}.
+    try link(ReportTo) of
+        true ->
+            self() ! diff,
+            {ok, {TreeServer, ReportTo}}
+    catch error:noproc ->
+        {stop, {missing_middleman, ReportTo}}
+    end.
 
 handle_call(_Call, _From, State) ->
     {noreply, State}.

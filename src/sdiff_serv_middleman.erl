@@ -75,7 +75,7 @@ relay({diff, Ref}, C=#context{access = {Mod, Ref, State}, server = Server}) ->
     {next_state, diff, C#context{access = {Mod, Ref, NewState}}}.
 
 relay(_Event, _From, Context) ->
-    error_logger:warning_msg("unexpected event on ln ~p: ~p~n",[?LINE, _Event]),
+    error_logger:warning_msg("unexpected event: ~p~n",[_Event]),
     {next_state, relay, Context}.
 
 diff({write, _Key, _Val}=Event, C=#context{queue=Queue}) ->
@@ -97,19 +97,19 @@ diff({sync_request, _Command, _Path} = Event, _From, C=#context{access={Mod,Ref,
     {ok, {sync_response, Bin}, State3} = Mod:recv(State2, timer:seconds(60)),
     {reply, Bin, diff, C#context{access={Mod,Ref,State3}}};
 diff(_Event, _From, Context) ->
-    error_logger:warning_msg("unexpected event on ln ~p: ~p~n",[?LINE, _Event]),
+    error_logger:warning_msg("unexpected event: ~p~n",[_Event]),
     {next_state, diff, Context}.
 
 handle_event(_Event, StateName, Context) ->
-    error_logger:warning_msg("unexpected event on ln ~p: ~p~n",[?LINE, _Event]),
+    error_logger:warning_msg("unexpected event: ~p~n",[_Event]),
     {next_state, StateName, Context}.
 
 handle_sync_event(_Event, _From, StateName, Context) ->
-    error_logger:warning_msg("unexpected event on ln ~p: ~p~n",[?LINE, _Event]),
+    error_logger:warning_msg("unexpected event: ~p~n",[_Event]),
     {next_state, StateName, Context}.
 
 handle_info(_Info, StateName, Context) ->
-    error_logger:warning_msg("unexpected event on ln ~p: ~p~n", [?LINE, _Info]),
+    error_logger:warning_msg("unexpected event: ~p~n", [_Info]),
     {next_state, StateName, Context}.
 
 code_change(_OldVsn, StateName, Context, _Extra) ->

@@ -5,7 +5,8 @@
   {applications,
    [kernel,
     stdlib,
-    merklet
+    merklet,
+    lager
    ]},
   {env,[]},
   {modules, []},
