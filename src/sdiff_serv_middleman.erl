@@ -88,7 +88,7 @@ diff({sync_done, Diff}, C=#context{queue=Queue, readfun=Read, access={Mod,Ref,St
     {ok, NewState} = lists:foldl(
         fun(Action, {ok,TmpState}) -> Mod:send(Action, TmpState) end,
         {ok, State},
-        [sync_done]++lists:reverse(Queue)++Values
+        [sync_seq]++lists:reverse(Queue)++Values++[sync_done]
     ),
     {next_state, relay, C#context{queue=[], access={Mod,Ref,NewState}}}.
 

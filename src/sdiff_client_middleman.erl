@@ -10,8 +10,8 @@
 -module(sdiff_client_middleman).
 -behaviour(gen_fsm).
 -export([start/3, start/4, start_link/3, start_link/4, state/1, state/2]).
--export([init/1, disconnected/2, disconnected/3,
-         relay/2, relay/3, diff/2, diff/3, diff_wait/2, diff_wait/3,
+-export([init/1, disconnected/2, disconnected/3, relay/2, relay/3,
+         diff/2, diff/3, pre_diff/2, pre_diff/3, post_diff/2, post_diff/3,
          handle_event/3, handle_sync_event/4, handle_info/3,
          code_change/4, terminate/3]).
 
@@ -45,7 +45,13 @@ state(Pid, Timeout) ->
     receive
         {Ref, Reply} ->
             erlang:demonitor(Ref, [flush]),
-            Reply;
+            case Reply of
+                disconnected -> Reply;
+                relay -> Reply;
+                diff -> Reply;
+                pre_diff -> diff;
+                post_diff -> diff
+            end;
         {'DOWN', Ref, process, Pid, Reason} ->
             error(Reason)
     after Timeout ->
@@ -100,7 +106,7 @@ relay({delete, _Key} = Event, C=#context{client=Client}) ->
     to_state(relay, C);
 relay({diff, Pid, Tree}, C=#context{client=Pid, access={Mod, State}}) ->
     {ok, NewState} = Mod:send(sync_req, State),
-    to_state(diff_wait, C#context{access={Mod, NewState}, tree=Tree}).
+    to_state(pre_diff, C#context{access={Mod, NewState}, tree=Tree}).
 
 relay(Event, _From, Context) ->
     lager:warning("sdiff_client_middleman unexpected event in state ~p: ~p~n",
@@ -108,34 +114,50 @@ relay(Event, _From, Context) ->
     {next_state, relay, Context}.
 
 %% Events in-flight get purged
-diff_wait({write, _Key, _Val} = Event, C=#context{client=Client}) ->
+pre_diff({write, _Key, _Val} = Event, C=#context{client=Client}) ->
     Client ! Event,
-    to_state(diff_wait, C);
-diff_wait({delete, _Key} = Event, C=#context{client=Client}) ->
+    to_state(pre_diff, C);
+pre_diff({delete, _Key} = Event, C=#context{client=Client}) ->
     Client ! Event,
-    to_state(diff_wait, C);
+    to_state(pre_diff, C);
 %% Time to start -- stuff is purged
-diff_wait(sync_start, C=#context{tree=Tree}) ->
+pre_diff(sync_start, C=#context{tree=Tree}) ->
     SerializedTree = merklet:access_serialize(Tree),
     to_state(diff, C#context{tree=SerializedTree}).
 
-diff_wait(Event, _From, Context) ->
+pre_diff(Event, _From, Context) ->
     lager:warning("sdiff_client_middleman unexpected event in state ~p: ~p~n",
-                  [diff_wait, Event]),
-    {next_state, diff_wait, Context}.
+                  [pre_diff, Event]),
+    {next_state, pre_diff, Context}.
 
 diff({sync_request, Cmd, Path}, C=#context{access={Mod, State}, tree=T}) ->
     Bin = T(Cmd, Path),
     {ok, NewState} = Mod:send({sync_response, Bin}, State),
     to_state(diff, C#context{access={Mod, NewState}});
-diff(sync_done, C=#context{client=Client}) ->
-    Client ! {diff_done, self()},
-    to_state(relay, C#context{tree=undefined}).
+diff(sync_seq, C=#context{client=Client}) ->
+    to_state(post_diff, C#context{tree=undefined}).
 
 diff(Event, _From, Context) ->
     lager:warning("sdiff_client_middleman unexpected event in state ~p: ~p~n",
                   [diff, Event]),
     {next_state, relay, Context}.
+
+%% Sync up diffed elements
+post_diff({write, _Key, _Val} = Event, C=#context{client=Client}) ->
+    Client ! Event,
+    to_state(post_diff, C);
+post_diff({delete, _Key} = Event, C=#context{client=Client}) ->
+    Client ! Event,
+    to_state(post_diff, C);
+%% Time to go back to relay -- everything is up to date
+post_diff(sync_done, C=#context{client=Client}) ->
+    Client ! {diff_done, self()},
+    to_state(relay, C).
+
+post_diff(Event, _From, Context) ->
+    lager:warning("sdiff_client_middleman unexpected event in state ~p: ~p~n",
+                  [post_diff, Event]),
+    {next_state, post_diff, Context}.
 
 handle_event(Event, StateName, Context) ->
     lager:warning("sdiff_client_middleman unexpected all-state event in state ~p: ~p~n",

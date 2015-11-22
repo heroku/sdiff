@@ -57,8 +57,6 @@ handle_call(diff, _From, State=#state{middleman=Pid, canonical=Tree}) ->
             {reply, disconnected, State};
         diff ->
             {reply, already_diffing, State};
-        diff_wait ->
-            {reply, already_diffing, State};
         relay ->
             %% Actual diffing. For this one we must make a local copy for the current
             %% operation, to make sure we don't have weird mutating trees during a diffing.

@@ -149,9 +149,10 @@ a fourth server process (DIFFER) is introduced:
 6.     |         |<-{done,Res}-|            |             ||             |           |
        |         |          [close]         |             ||             |           |
        |         |                          |             ||             |           |
-       |         |----------------sync_done-------------->||--sync_done->|           |
+       |         |----------------sync_seq--------------->||--sync_seq-->|           |
 7.     |         |------------------write---------------->||----write--->|           |
        |         |                          |             ||             |---write-->|
+       |         |----------------sync_done-------------->||--sync_done->|           |
        |         |                          |             ||             |           |
 ```
 
@@ -227,12 +228,12 @@ and one server using TCP and the reference TCP access protocol implementation.
 TODO
 -----
 
-- Tests
+- More Tests
 - tree snapshot functionality (for cheaper success/failure)
 - conditional updates on the client-side (so that failures are automatically
   retried on the next repair)
-- Failure handling in sockets closing
-- Timeout management
+- Failure handling in sockets closing too often
 - Define the access function behaviour for clients and servers (lets
   people use other stuff than unauthenticated TCP for things)
+- use TCP_NODELAY only when diffing
 - and so on

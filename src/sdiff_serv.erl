@@ -132,7 +132,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_, #state{clients=Clients}) ->
-    maps:fold(fun(_Ref, Pid, _Acc) -> exit(Pid, {shutdown,terminate}) end, 0, Clients).
+    maps:fold(fun(_Ref, Pid, _Acc) -> exit(Pid, shutdown) end, 0, Clients).
 
 %%%%%%%%%%%%%%%
 %%% PRIVATE %%%
