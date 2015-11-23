@@ -1,7 +1,7 @@
 -module(sdiff_client).
 -behaviour(gen_server).
 -export([write/3, delete/2,
-         ready/1, diff/1, status/1]).
+         ready/1, diff/1, sync_diff/1, sync_diff/2, status/1]).
 -export([start_link/3, start_link/4]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -9,7 +9,8 @@
 -record(state, {canonical = undefined :: merklet:tree(),
                 init_access :: {module(), term()},
                 middleman :: undefined | pid(),
-                storefun :: fun(({write, _, _} | {delete, _}) -> _)
+                storefun :: fun(({write, _, _} | {delete, _}) -> _),
+                sync_diff :: {pid(), reference()}
                }).
 %%%%%%%%%%%%%%
 %%% PUBLIC %%%
@@ -40,6 +41,12 @@ status(Name) ->
 diff(Name) ->
     gen_server:call(Name, diff).
 
+sync_diff(Name) ->
+    gen_server:call(Name, sync_diff).
+
+sync_diff(Name, Timeout) ->
+    gen_server:call(Name, sync_diff, Timeout).
+
 %%%%%%%%%%%%%%%%%%
 %%% GEN_SERVER %%%
 %%%%%%%%%%%%%%%%%%
@@ -51,7 +58,7 @@ init([StoreCallback, Access, AccessArgs]) ->
 %% Diff management
 handle_call(diff, _From, State=#state{middleman=undefined}) ->
     {reply, disconnected, State};
-handle_call(diff, _From, State=#state{middleman=Pid, canonical=Tree}) ->
+handle_call(diff, _From, State=#state{middleman=Pid, canonical=Tree, sync_diff=undefined}) ->
     case sdiff_client_middleman:state(Pid) of
         disconnected ->
             {reply, disconnected, State};
@@ -61,13 +68,28 @@ handle_call(diff, _From, State=#state{middleman=Pid, canonical=Tree}) ->
             %% Actual diffing. For this one we must make a local copy for the current
             %% operation, to make sure we don't have weird mutating trees during a diffing.
             %% We then initiate the access handler as a client.
-            %%
-            %% Any problem having this local?
-            %% Should probably be async, unless it's okay for the client to block
-            %% while receiving. It would save memory!
             Pid ! {diff, self(), Tree},
             {reply, async_diff, State}
     end;
+handle_call(diff, _From, State=#state{sync_diff=_Wait}) ->
+    {reply, already_diffing, State};
+handle_call(sync_diff, _From, State=#state{middleman=undefined}) ->
+    {reply, disconnected, State};
+handle_call(sync_diff, From, State=#state{middleman=Pid, canonical=Tree, sync_diff=undefined}) ->
+    case sdiff_client_middleman:state(Pid) of
+        disconnected ->
+            {reply, disconnected, State};
+        diff ->
+            {reply, already_diffing, State};
+        relay ->
+            %% Actual diffing. For this one we must make a local copy for the current
+            %% operation, to make sure we don't have weird mutating trees during a diffing.
+            %% We then initiate the access handler as a client.
+            Pid ! {diff, self(), Tree},
+            {noreply, State#state{sync_diff=From}}
+    end;
+handle_call(sync_diff, _From, State=#state{sync_diff=_Wait}) ->
+    {reply, already_diffing, State};
 handle_call({write, _Key, _Val}=Msg, _From, State) ->
     NewState = update_tree(Msg, State),
     {reply, ok, NewState};
@@ -109,8 +131,18 @@ handle_info({write, _Key, _Val}=Msg, State) ->
 handle_info({delete, _Key}=Msg, State) ->
     NewState = update(Msg, State),
     {noreply, NewState};
-handle_info({diff_done,Pid}, State=#state{middleman=Pid}) ->
-    {noreply, State};
+handle_info({diff_aborted,Pid}, State=#state{middleman=Pid, sync_diff=From}) ->
+    case From of
+        undefined -> ok;
+        _ -> gen_server:reply(From, aborted)
+    end,
+    {noreply, State#state{sync_diff=undefined}};
+handle_info({diff_done,Pid}, State=#state{middleman=Pid, sync_diff=From}) ->
+    case From of
+        undefined -> ok;
+        _ -> gen_server:reply(From, done)
+    end,
+    {noreply, State#state{sync_diff=undefined}};
 handle_info(Info, State=#state{}) ->
     lager:warning("unexpected info: ~p", [Info]),
     {noreply, State}.

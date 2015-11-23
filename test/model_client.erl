@@ -1,5 +1,7 @@
 -module(model_client).
--export([start/0, write/2, ready/0, delete/1, diff/0, wait_connected/0]).
+-define(MAGIC_KEY, <<"$$ THIS IS SPECIAL $$">>).
+-export([start/0, write/2, ready/0, delete/1, diff/0, sync_diff/0,
+         wait_connected/0]).
 
 start() ->
     {ok, {Mod, Config}} = application:get_env(sdiff, config),
@@ -22,7 +24,23 @@ delete(K) ->
     sdiff_client:delete(client, K).
 
 diff() ->
-    sdiff_client:diff(client).
+    case sdiff_client:diff(client) of
+        async_diff -> async_diff;
+        already_diffing -> diff()
+    end.
+
+sync_diff() ->
+    case sdiff_client:sync_diff(client) of
+        done ->
+            {done, tab_to_map(client)};
+        already_diffing ->
+            %% To make model checking easier, we work with the assumption that
+            %% sync_diff forces a state convergence. Otherwise it is very
+            %% difficult to know when prior operations will have finished when
+            %% the model is synchronous but the system asynchronous (except for
+            %% this and model_join:join/0)
+            sync_diff()
+    end.
 
 wait_connected() ->
     wait_connected(timer:seconds(3)).
@@ -33,3 +51,6 @@ wait_connected(N) ->
         disconnected -> wait_connected(N);
         _ -> true
     end.
+
+tab_to_map(Tid) ->
+    maps:remove(?MAGIC_KEY, maps:from_list(ets:tab2list(Tid))).
