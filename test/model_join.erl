@@ -44,16 +44,24 @@ stop(disterl) ->
     Middleman = whereis(server_middleman),
     Server = whereis(server),
     Client = whereis(client),
+    lager:debug("links: ~p", [process_info(self(), links)]),
+    lager:debug("shutdown: ~p", [[self(), Client, Middleman, Server]]),
+    [unlink(Pid) || Pid <- [Client, Middleman, Server],
+                    Pid =/= undefined],
     [begin
-        unlink(Pid), exit(Pid, shutdown), wait_dead(Pid)
+        exit(Pid, shutdown), wait_dead(Pid)
      end || Pid <- [Client, Middleman, Server],
-            Pid =/= undefined];
+            Pid =/= undefined],
+    ets:delete(server),
+    ets:delete(client);
 stop(tcp) ->
     [begin unlink(Pid), exit(Pid, shutdown), wait_dead(Pid) end
      || Pid <- [whereis(client)], Pid =/= undefined],
     ranch:stop_listener(server),
     [begin unlink(Pid), exit(Pid, shutdown), wait_dead(Pid) end
-     || Pid <- [whereis(server)], Pid =/= undefined].
+     || Pid <- [whereis(server)], Pid =/= undefined],
+    ets:delete(server),
+    ets:delete(client).
 
 
 join() ->

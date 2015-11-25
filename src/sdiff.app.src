@@ -1,11 +1,13 @@
 {application, 'sdiff',
- [{description, "An OTP application"},
+ [{description,
+   "An application to do state-based replication from master to follower."},
   {vsn, "0.1.0"},
   {registered, []},
   {applications,
    [kernel,
     stdlib,
-    merklet
+    merklet,
+    lager
    ]},
   {env,[]},
   {modules, []},

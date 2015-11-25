@@ -27,6 +27,7 @@ recv(S=#state{owner=Pid}, Timeout) ->
     Pid ! {recv, self(), Ref},
     receive
         {ok, Ref, Msg} ->
+            lager:debug("srecv ~p", [Msg]),
             erlang:demonitor(Ref, [flush]),
             {ok, Msg, S};
         {error, Ref, Reason} ->
@@ -40,7 +41,8 @@ recv(S=#state{owner=Pid}, Timeout) ->
 
 
 send(Msg, S=#state{csocket=Sock}) ->
-    ok = gen_tcp:send(Sock, serialize_msg(Msg)),
+    lager:debug("ssend ~p", [Msg]),
+    _ = gen_tcp:send(Sock, serialize_msg(Msg)),
     {ok, S}.
 
 %%%%%%%%%%%%%%%%%
@@ -53,19 +55,22 @@ start_link(Ref, Socket, Transport, Opts) ->
 init(RanchRef, Socket, Transport, _Opts = [Name]) ->
     ok = ranch:accept_ack(RanchRef),
     ok = sdiff_serv:await(Name),
-    Ref = sdiff_serv:connect(Name, ?MODULE, {self(), Socket}),
+    _Pid = sdiff_serv:connect(Name, ?MODULE, {self(), Socket}),
     receive
+        %% _Pid == ReportTo
         {report_to, ReportTo, MsgRef} ->
             link(ReportTo),
-            loop(Socket, Transport, #rstate{ref=Ref, report_to={ReportTo,MsgRef}})
+            loop(Socket, Transport, #rstate{report_to={ReportTo,MsgRef}})
     end.
 
 loop(Socket, Transport, State=#rstate{pending=Pending, report_to={RPid, RRef}}) ->
     case sock_recv(Transport, Socket, Pending, 0, 500) of
         {error, timeout} ->
             loop(Socket, Transport, State);
+        {error, Other} ->
+            exit({shutdown, {error, Other}});
         {ok, sync_req, NewPending} ->
-            RPid ! {diff, RRef},
+            sdiff_serv_middleman:diff_req(RPid, RRef),
             loop(Socket, Transport, State#rstate{pending=NewPending});
         {ok, Decoded, NewPending} ->
             receive
