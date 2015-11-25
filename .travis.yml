@@ -1,0 +1,12 @@
+sudo: false
+language: erlang
+install: 'true'
+script: wget https://s3.amazonaws.com/rebar3/rebar3 && chmod +x rebar3 && ./rebar3 do update,ct,proper,dialyzer
+otp_release:
+   - 18.1
+   - 18.0
+cache:
+  directories:
+  - $HOME/.cache/rebar3/
+notifications:
+  email: false

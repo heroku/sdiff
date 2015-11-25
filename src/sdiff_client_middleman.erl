@@ -134,7 +134,7 @@ diff({sync_request, Cmd, Path}, C=#context{access={Mod, State}, tree=T}) ->
     Bin = T(Cmd, Path),
     {ok, NewState} = Mod:send({sync_response, Bin}, State),
     to_state(diff, C#context{access={Mod, NewState}});
-diff(sync_seq, C=#context{client=Client}) ->
+diff(sync_seq, C=#context{}) ->
     to_state(post_diff, C#context{tree=undefined}).
 
 diff(Event, _From, Context) ->
