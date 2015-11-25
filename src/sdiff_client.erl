@@ -1,8 +1,12 @@
 -module(sdiff_client).
 -behaviour(gen_server).
--export([write/3, delete/2,
-         ready/1, diff/1, sync_diff/1, sync_diff/2, status/1]).
--export([start_link/3, start_link/4]).
+%% user callbacks
+-export([start_link/3, start_link/4,
+         write/3, delete/2, ready/1,
+         diff/1, sync_diff/1, sync_diff/2]).
+%% debug/test callbacks
+-export([status/1]).
+%% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
 

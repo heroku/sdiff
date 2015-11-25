@@ -1,9 +1,15 @@
 -module(sdiff_serv).
 -behaviour(gen_server).
--export([write/3, delete/2,
-         await/1, ready/1, connect/3,
-         tree/1, client_count/1]).
--export([start_link/2]).
+%% user callbacks
+-export([start_link/1, start_link/2,
+         write/3, delete/2, ready/1]).
+%% callbacks from the connection server third party
+-export([await/1, connect/3]).
+%% internal callbacks
+-export([tree/1]).
+%% debug/test callbacks
+-export([client_count/1]).
+%% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
 
@@ -17,6 +23,9 @@
 %%%%%%%%%%%%%%
 %%% PUBLIC %%%
 %%%%%%%%%%%%%%
+start_link(ReadFun) ->
+    gen_server:start_link(?MODULE, [ReadFun], []).
+
 start_link(Name, ReadFun) ->
     gen_server:start_link(Name, ?MODULE, [ReadFun], []).
 
@@ -63,14 +72,14 @@ handle_call(await, _From, State) ->
 %% Key/Val management for updates
 handle_call({write, Key, Val}, _From, State=#state{canonical=Tree, clients=Clients}) ->
     maps:fold(
-        fun(_Ref, Pid, _) -> sdiff_serv_middleman:write(Pid, Key, Val) end,
+        fun(Pid, _, _) -> sdiff_serv_middleman:write(Pid, Key, Val) end,
         ignore,
         Clients
     ),
     {reply, ok, State#state{canonical=merklet:insert({Key, term_to_binary(Val)}, Tree)}};
 handle_call({delete, Key}, _From, State=#state{canonical=Tree, clients=Clients}) ->
     maps:fold(
-        fun(_Ref, Pid, _) -> sdiff_serv_middleman:delete(Pid, Key) end,
+        fun(Pid, _, _) -> sdiff_serv_middleman:delete(Pid, Key) end,
         ignore,
         Clients
     ),
@@ -78,11 +87,8 @@ handle_call({delete, Key}, _From, State=#state{canonical=Tree, clients=Clients})
 %% Client subscription
 handle_call({connect, Access, AccessArgs}, _From,
             State=#state{clients=Clients, readfun=ReadFun}) ->
-    Self = self(),
-    %% TODO: unlink? move to a supervisor?
-    {ok, Pid} = sdiff_serv_middleman:start(Self, ReadFun, Access, AccessArgs),
-    Ref = erlang:monitor(process, Pid),
-    {reply, Ref, State#state{clients=Clients#{Ref => Pid}}};
+    {ok, Pid} = sdiff_serv_middleman:start_link(self(), ReadFun, Access, AccessArgs),
+    {reply, Pid, State#state{clients=Clients#{Pid => true}}};
 %% Diff management
 handle_call(tree, _From, State=#state{canonical=Tree}) ->
     %% Actual diffing. For this one we must make a local copy for he current
@@ -104,24 +110,16 @@ handle_cast(Cast, State=#state{}) ->
     error_logger:warning_report(unexpected_msg, {?MODULE, cast, Cast}),
     {noreply, State}.
 
-handle_info({'DOWN', Ref, process, _, normal}, State=#state{clients=Clients}) ->
+handle_info({'EXIT', Pid, normal}, State=#state{clients=Clients}) ->
     %% Process ended normally, assume the answer was sent.
-    {noreply, State=#state{clients=maps:remove(Ref, Clients)}};
-handle_info({'DOWN', Ref, process, Pid, Error}, State=#state{clients=Clients}) ->
+    {noreply, State=#state{clients=maps:remove(Pid, Clients)}};
+handle_info({'EXIT', Pid, Error}, State=#state{clients=Clients}) ->
     %% Process ended abnormally. Assume answer wasn't sent.
     case Clients of
-        #{Ref := Pid} ->
-            {noreply, State#state{clients=maps:remove(Ref, Clients)}};
+        #{Pid := _} ->
+            {noreply, State#state{clients=maps:remove(Pid, Clients)}};
         #{} ->
             error_logger:error_report(unexpected_monitor, {?MODULE, Pid, Error}),
-            {noreply, State}
-    end;
-handle_info({'EXIT', Pid, Error}, State=#state{clients=Clients}) ->
-    case lists:member(Pid, maps:values(Clients)) of
-        true ->
-            {noreply, State}; % monitor will handle it
-        false ->
-            error_logger:error_report(unexpected_exit, {?MODULE, Pid, Error}),
             {noreply, State}
     end;
 handle_info(Info, State=#state{}) ->
@@ -132,7 +130,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_, #state{clients=Clients}) ->
-    maps:fold(fun(_Ref, Pid, _Acc) -> exit(Pid, shutdown) end, 0, Clients).
+    maps:fold(fun(Pid, _, _Acc) -> exit(Pid, shutdown) end, 0, Clients).
 
 %%%%%%%%%%%%%%%
 %%% PRIVATE %%%

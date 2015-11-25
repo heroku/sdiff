@@ -55,11 +55,12 @@ start_link(Ref, Socket, Transport, Opts) ->
 init(RanchRef, Socket, Transport, _Opts = [Name]) ->
     ok = ranch:accept_ack(RanchRef),
     ok = sdiff_serv:await(Name),
-    Ref = sdiff_serv:connect(Name, ?MODULE, {self(), Socket}),
+    _Pid = sdiff_serv:connect(Name, ?MODULE, {self(), Socket}),
     receive
+        %% _Pid == ReportTo
         {report_to, ReportTo, MsgRef} ->
             link(ReportTo),
-            loop(Socket, Transport, #rstate{ref=Ref, report_to={ReportTo,MsgRef}})
+            loop(Socket, Transport, #rstate{report_to={ReportTo,MsgRef}})
     end.
 
 loop(Socket, Transport, State=#rstate{pending=Pending, report_to={RPid, RRef}}) ->

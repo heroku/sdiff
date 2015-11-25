@@ -236,4 +236,6 @@ TODO
 - Define the access function behaviour for clients and servers (lets
   people use other stuff than unauthenticated TCP for things)
 - use TCP_NODELAY only when diffing
+- have deletes delete entries that exist
+- allow for asynchronous update streams during diffing
 - and so on
