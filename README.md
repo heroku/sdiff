@@ -229,7 +229,6 @@ TODO
 -----
 
 - More Tests
-- Benchmarks
 - tree snapshot functionality (for cheaper success/failure)
 - conditional updates on the client-side (so that failures are automatically
   retried on the next repair)
