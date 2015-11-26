@@ -113,7 +113,8 @@ relay(Event, _From, Context) ->
                   [relay, Event]),
     {next_state, relay, Context}.
 
-%% Events in-flight get purged
+%% Events in-flight get purged (not really necessary since we allow
+%% in-flight updates now!)
 pre_diff({write, _Key, _Val} = Event, C=#context{client=Client}) ->
     Client ! Event,
     to_state(pre_diff, C);
@@ -135,7 +136,14 @@ diff({sync_request, Cmd, Path}, C=#context{access={Mod, State}, tree=T}) ->
     {ok, NewState} = Mod:send({sync_response, Bin}, State),
     to_state(diff, C#context{access={Mod, NewState}});
 diff(sync_seq, C=#context{}) ->
-    to_state(post_diff, C#context{tree=undefined}).
+    to_state(post_diff, C#context{tree=undefined});
+%% concurrent events unrelated to diffing
+diff({write, _Key, _Val} = Event, C=#context{client=Client}) ->
+    Client ! Event,
+    to_state(diff, C);
+diff({delete, _Key} = Event, C=#context{client=Client}) ->
+    Client ! Event,
+    to_state(diff, C).
 
 diff(Event, _From, Context) ->
     lager:warning("sdiff_client_middleman unexpected event in state ~p: ~p~n",
