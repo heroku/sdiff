@@ -225,16 +225,28 @@ Demo
 Shows both a very quick stream (1 key) and a repair operation between one client
 and one server using TCP and the reference TCP access protocol implementation.
 
+Benchmarks
+-----
+
+    $ rebar3 as bench shell
+    ...
+    1> bench:all(PortNumber, Count).
+
+Where `Count` is how many time each benchmark should be run. A value =< 10 is
+recommended, as benchmarks themselves can run with ~10,000 internal repetitions each.
+
 TODO
 -----
 
 - More Tests
 - tree snapshot functionality (for cheaper success/failure)
+- tree + dataset snapshot functionality (to re-sync trees too out of date?
+  maybe better as a side-protocol)
 - conditional updates on the client-side (so that failures are automatically
   retried on the next repair)
 - Failure handling in sockets closing too often
-- Define the access function behaviour for clients and servers (lets
-  people use other stuff than unauthenticated TCP for things)
+- Define the access function behaviour for clients and servers (lets people use
+  other stuff than unauthenticated TCP for things)
 - use TCP_NODELAY only when diffing
 - have deletes delete entries that exist
 - allow for asynchronous update streams during diffing
