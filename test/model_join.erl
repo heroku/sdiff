@@ -65,12 +65,12 @@ stop(tcp) ->
 
 
 join() ->
-    %% Synchronize here. We do it by inserting a magic key with a unique
+    %% Synchronize a stream here. We do it by inserting a magic key with a unique
     %% value and waiting for it to come to the client, meaning everything in-
     %% between should be there.
-    %% This relies on a property by which a stream of updates is in order,
-    %% and interrupted by a diff sequence, which is currently an implementation
-    %% detail.
+    %% This relies on a property by which a stream of updates is in order.
+    %% However, because things aren't interrupted by diff sequences, little
+    %% this property only holds with synchronous diffs and not asynchronous ones.
     %% The other problem is that the connection process is asynchronous and can
     %% fail if it came too fast right after the first declaration of
     %% readiness. Because of this, we try to re-write the token value

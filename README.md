@@ -187,7 +187,22 @@ Build
 Tests
 -----
 
+All tests can be run at once:
+
     $ rebar3 do ct, proper, dialyzer
+
+To run more advanced/trickier PropEr tests, you can try to tweak the VM
+time options (`+T 9`), a thing rebar3 can't do:
+
+    $ rebar3 proper -n 1
+    ... compiler output to set up environment ...
+    
+    $ ERL_LIBS=_build/test/lib erl +T 9 -pa _build/test/lib/sdiff/test/
+    1> proper:module(prop_sync, [{numtests,1000}]).
+    .....
+
+This has a tendency to find a few timing bugs more easily, but runs
+quite a bit slower.
 
 Demo
 -----
