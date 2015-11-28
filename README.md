@@ -115,11 +115,12 @@ can avoid passing message through it to reach the client directly
 
 This is where all the complexity lies.
 The protocol is in multiple phases, and is triggered by a client demand,
-and requires synchronization with the server so that all trailing messages are
-avoided.
+and requires synchronization with the server so that updates are received
+in the right order.
 
-The server middleman will maintain a queue of pending updates during the
-diffing, to be replayed as soon as things are done.
+The server middleman will maintain a queue of keys relayed in updates during
+the diffing, and will remove them from the diff result (as the diff would
+now be outdated regarding these keys).
 
 Because the diffing action enabled by `merklet` is blocking and stateless,
 a fourth server process (DIFFER) is introduced:
@@ -158,7 +159,9 @@ a fourth server process (DIFFER) is introduced:
 
 1. The client is asked to diff
 2. The client process sends the tree to its middleman, making a copy of it
-3. The synchronous phase begins, letting all in-flight messages drain to the client
+3. The synchronous phase begins, letting all in-flight messages prior to the diffing
+   drain to the client. This isn't strictly necessary, but opens the door to some
+   protocol-specific optimizations.
 4. The differ grabs the tree from the SERVER
 5. Diffing starts, with the differ on the server asking for data on the merkle
    tree of the client, and the client answering back. This goes on for a while.
@@ -168,6 +171,9 @@ a fourth server process (DIFFER) is introduced:
 6. The diffing is done, a list of result is returned to the MIDDLEMAN, which
    uses the `ReadFun` value to replay results after closing the diff protocol
 7. The values in 6. being replayed.
+
+During the entire operations, regular updates can still be streamed to the client
+without interruption.
 
 Another subtlety is that while the `diff` is a PUSH operation from RANCH WORKER
 to MIDDLEMAN, all other reads from the socket are PULL-only with MIDDLEMAN asking
@@ -181,7 +187,22 @@ Build
 Tests
 -----
 
+All tests can be run at once:
+
     $ rebar3 do ct, proper, dialyzer
+
+To run more advanced/trickier PropEr tests, you can try to tweak the VM
+time options (`+T 9`), a thing rebar3 can't do:
+
+    $ rebar3 proper -n 1
+    ... compiler output to set up environment ...
+    
+    $ ERL_LIBS=_build/test/lib erl +T 9 -pa _build/test/lib/sdiff/test/
+    1> proper:module(prop_sync, [{numtests,1000}]).
+    .....
+
+This has a tendency to find a few timing bugs more easily, but runs
+quite a bit slower.
 
 Demo
 -----
@@ -239,15 +260,14 @@ TODO
 -----
 
 - More Tests
+- have deletes delete entries that exist in property-based tests
 - tree snapshot functionality (for cheaper success/failure)
-- tree + dataset snapshot functionality (to re-sync trees too out of date?
-  maybe better as a side-protocol)
-- conditional updates on the client-side (so that failures are automatically
-  retried on the next repair)
 - Failure handling in sockets closing too often
 - Define the access function behaviour for clients and servers (lets people use
   other stuff than unauthenticated TCP for things)
-- use TCP_NODELAY only when diffing
-- have deletes delete entries that exist
-- allow for asynchronous update streams during diffing
+- use TCP_NODELAY only when diffing / evaluate impact
+- conditional updates on the client-side (so that failures are automatically
+  retried on the next repair)
+- tree + dataset snapshot functionality (to re-sync trees too out of date?
+  maybe better as a side-protocol)
 - and so on

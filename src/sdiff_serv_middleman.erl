@@ -78,17 +78,18 @@ relay(_Event, _From, Context) ->
     error_logger:warning_msg("unexpected event: ~p~n",[_Event]),
     {next_state, relay, Context}.
 
-diff({write, _Key, _Val}=Event, C=#context{queue=Queue}) ->
-    {next_state, diff, C#context{queue=[Event | Queue]}};
-diff({delete, _Key}=Event, C=#context{queue=Queue}) ->
-    {next_state, diff, C#context{queue=[Event | Queue]}};
+diff({write, Key, _Val}=Event, C=#context{queue=Queue, access={Mod,Ref,State}}) ->
+    {ok,NewState} = Mod:send(Event, State),
+    {next_state, diff, C#context{queue=[Key | Queue], access={Mod,Ref,NewState}}};
+diff({delete, Key}=Event, C=#context{queue=Queue, access={Mod,Ref,State}}) ->
+    {ok,NewState} = Mod:send(Event, State),
+    {next_state, diff, C#context{queue=[Key | Queue], access={Mod,Ref,NewState}}};
 diff({sync_done, Diff}, C=#context{queue=Queue, readfun=Read, access={Mod,Ref,State}}) ->
-    QueuedKeys = [element(2, Q) || Q <- Queue],
-    Values = [Read(K) || K <- Diff, not lists:member(K, QueuedKeys)],
+    Values = [Read(K) || K <- Diff, not lists:member(K, Queue)],
     {ok, NewState} = lists:foldl(
         fun(Action, {ok,TmpState}) -> Mod:send(Action, TmpState) end,
         {ok, State},
-        [sync_seq]++lists:reverse(Queue)++Values++[sync_done]
+        [sync_seq]++Values++[sync_done]
     ),
     {next_state, relay, C#context{queue=[], access={Mod,Ref,NewState}}}.
 

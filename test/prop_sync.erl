@@ -76,7 +76,6 @@ command(#state{server = {init, _}}) ->
 command(#state{clients = [{ready, _}], server = {ready, _}}) ->
     oneof([{call, ?SERVER, write, [key(), val()]},
            {call, ?SERVER, delete, [key()]},
-           {call, ?CLIENT, diff, []},
            {call, ?CLIENT, sync_diff, []},
            {call, ?BOTH, join, []}]).
 
@@ -119,17 +118,13 @@ next_state(S=#state{clients=Clients, server={SS, M}}, _V,
             S#state{server={SS, M#{K => V}}}
     end;
 %% Sync & Read
-next_state(S=#state{clients=[{CS,_}], server={_,M}}, _V,
-           {call, ?CLIENT, diff, []}) ->
-    %% gonna need a precond on both being ready
-    S#state{clients=[{CS,M}]};
 next_state(S=#state{clients=[{CS,_CM}], server={_,M}}, _V,
            {call, ?CLIENT, sync_diff, []}) ->
     %% gonna need a precond on both being ready
     S#state{clients=[{CS,M}]};
 next_state(State, _V, {call, ?BOTH, join, []}) ->
     %% this is a virtual call to just say "wait up!" and let
-    %% async postconditions sync up
+    %% async streams catch up.
     State.
 
 precondition(#state{clients=[{disconnected,_}], server={await,_}}, Call) ->
@@ -162,8 +157,6 @@ postcondition(_S, {call, _, write, [_K,_V]}, Result) ->
     Result =:= ok;
 postcondition(_S, {call, _, delete, [_K]}, Result) ->
     Result =:= ok;
-postcondition(_S, {call, _, diff, []}, Result) ->
-    Result =:= async_diff;
 postcondition(#state{clients=[{_,_}], server={_,S}}, {call, ?CLIENT, sync_diff, []},
               {done, Map}) ->
     Res = Map =:= S,
@@ -171,6 +164,10 @@ postcondition(#state{clients=[{_,_}], server={_,S}}, {call, ?CLIENT, sync_diff, 
     Res;
 postcondition(#state{clients=[{_,C}], server={_,S}}, {call, ?BOTH, join, []},
               {CliRes, SRes}) ->
+    %% This assumes that all diffs are synchronous. Without that, the two maps
+    %% may not be fully identical as the message used by model_join:join may
+    %% make it through before an async diff is done, breaking the expected
+    %% equivalence in the model.
     Res = C =:= CliRes andalso S =:= SRes,
     Res orelse ct:pal("join ~p =:= ~p~nandalso~n~p =:= ~p", [C, CliRes, S, SRes]),
     Res.

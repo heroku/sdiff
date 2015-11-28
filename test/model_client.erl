@@ -1,6 +1,6 @@
 -module(model_client).
 -define(MAGIC_KEY, <<"$$ THIS IS SPECIAL $$">>).
--export([start/0, write/2, ready/0, delete/1, diff/0, sync_diff/0,
+-export([start/0, write/2, ready/0, delete/1, sync_diff/0,
          wait_connected/0]).
 
 start() ->
@@ -22,12 +22,6 @@ ready() ->
 delete(K) ->
     ets:delete(client, K), % manual delete
     sdiff_client:delete(client, K).
-
-diff() ->
-    case sdiff_client:diff(client) of
-        async_diff -> async_diff;
-        already_diffing -> diff()
-    end.
 
 sync_diff() ->
     case sdiff_client:sync_diff(client) of
