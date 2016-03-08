@@ -12,5 +12,5 @@
   0},
  {<<"merklet">>,
   {git,"https://github.com/ferd/merklet.git",
-       {ref,"6818d76779a2b11fc3fc92f53d3a4aaa833c13ee"}},
+       {ref,"4ec5a04947231dfe23530fbcd549522a74ecc6dc"}},
   0}].
