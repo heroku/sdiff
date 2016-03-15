@@ -56,10 +56,10 @@ diff(Name) ->
     gen_server:call(Name, diff).
 
 sync_diff(Name) ->
-    gen_server:call(Name, sync_diff).
+    gen_server:call(Name, {sync_diff, 5000}, 5000).
 
 sync_diff(Name, Timeout) ->
-    gen_server:call(Name, sync_diff, Timeout).
+    gen_server:call(Name, {sync_diff, Timeout}, Timeout).
 
 %%%%%%%%%%%%%%%%%%
 %%% GEN_SERVER %%%
@@ -87,10 +87,10 @@ handle_call(diff, _From, State=#state{middleman=Pid, canonical=Tree, sync_diff=u
     end;
 handle_call(diff, _From, State=#state{sync_diff=_Wait}) ->
     {reply, already_diffing, State};
-handle_call(sync_diff, _From, State=#state{middleman=undefined}) ->
+handle_call({sync_diff, _}, _From, State=#state{middleman=undefined}) ->
     {reply, disconnected, State};
-handle_call(sync_diff, From, State=#state{middleman=Pid, canonical=Tree, sync_diff=undefined}) ->
-    case sdiff_client_middleman:state(Pid) of
+handle_call({sync_diff, Timeout}, From, State=#state{middleman=Pid, canonical=Tree, sync_diff=undefined}) ->
+    case sdiff_client_middleman:state(Pid, Timeout) of
         disconnected ->
             {reply, disconnected, State};
         diff ->
@@ -102,7 +102,7 @@ handle_call(sync_diff, From, State=#state{middleman=Pid, canonical=Tree, sync_di
             Pid ! {diff, self(), Tree},
             {noreply, State#state{sync_diff=From}}
     end;
-handle_call(sync_diff, _From, State=#state{sync_diff=_Wait}) ->
+handle_call({sync_diff, _}, _From, State=#state{sync_diff=_Wait}) ->
     {reply, already_diffing, State};
 handle_call({write, _Key, _Val}=Msg, _From, State) ->
     NewState = update_tree(Msg, State),
