@@ -9,6 +9,8 @@
 -export([tree/1]).
 %% debug/test callbacks
 -export([client_count/1]).
+%% export/import of tree
+-export([export/3, import/3]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
@@ -55,6 +57,14 @@ tree(Name) ->
 client_count(Name) ->
     gen_server:call(Name, client_count).
 
+%% Tree dump/restore
+export(Name, File, Timeout) ->
+    gen_server:call(Name, {export, File}, Timeout).
+
+import(Name, File, Timeout) ->
+    gen_server:call(Name, {import, File}, Timeout).
+
+
 %%%%%%%%%%%%%%%%%%
 %%% GEN_SERVER %%%
 %%%%%%%%%%%%%%%%%%
@@ -96,6 +106,24 @@ handle_call(tree, _From, State=#state{canonical=Tree}) ->
     {reply, Tree, State};
 handle_call(client_count, _From, State=#state{clients=Clients}) ->
     {reply, maps:size(Clients), State};
+handle_call({export, FileName}, _From, State=#state{canonical=Tree}) ->
+    try
+       {ok, File} = file:open(FileName, [write, raw]),
+       Res = file:write(File, term_to_binary(Tree, [compressed])),
+       {reply, Res, State}
+    catch
+        T:R ->
+            {reply, {error, {T,R}}, State}
+    end;
+handle_call({import, FileName}, _From, State=#state{}) ->
+    try
+       {ok,Data} = file:read_file(FileName),
+       Tree = binary_to_term(Data),
+       {reply, ok, State#state{canonical=Tree}}
+    catch
+        T:R ->
+            {reply, {error, {T,R}}, State}
+    end;
 %% Catch-all
 handle_call(Call, _From, State=#state{}) ->
     error_logger:warning_report(unexpected_msg, {?MODULE, call, Call}),
