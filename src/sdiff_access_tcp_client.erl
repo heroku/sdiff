@@ -42,12 +42,16 @@ serialize_msg(Msg) ->
     <<"msg:", MsgSize:32, BinMsg/binary>>.
 
 unserialize_msg(Msg) ->
-    <<"msg:", MsgSize:32, Rest/binary>> = Msg,
-    if byte_size(Rest) >= MsgSize ->
-            <<Decoded:MsgSize/binary, Trailing/binary>> = Rest,
-            {msg, binary_to_term(Decoded,[safe]), Trailing};
-       byte_size(Rest) < MsgSize ->
-            {more, Msg, MsgSize - byte_size(Rest)}
+    case Msg of
+        <<"msg:", MsgSize:32, Rest/binary>> ->
+            if byte_size(Rest) >= MsgSize ->
+                    <<Decoded:MsgSize/binary, Trailing/binary>> = Rest,
+                    {msg, binary_to_term(Decoded,[safe]), Trailing};
+               byte_size(Rest) < MsgSize ->
+                    {more, Msg, MsgSize - byte_size(Rest)}
+            end;
+        _ when byte_size(Msg) < 8 -> % smallest size for header
+            {more, Msg, 8 - byte_size(Msg)}
     end.
 
 
